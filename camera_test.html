@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>MediaPipe Hands Demo</title>
+  <style>
+    body {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      background: #222;
+      color: #fff;
+      margin: 0;
+      height: 100vh;
+    }
+    video, canvas {
+      border: 3px solid #0f0;
+      border-radius: 10px;
+    }
+  </style>
+</head>
+<body>
+  <h2>MediaPipe Hands Demo</h2>
+  <video id="video" width="640" height="480" autoplay muted></video>
+  <canvas id="canvas" width="640" height="480"></canvas>
+
+  <!-- MediaPipe Hands and drawing utils -->
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js"></script>
+  <script>
+    const video = document.getElementById('video');
+    const canvas = document.getElementById('canvas');
+    const ctx = canvas.getContext('2d');
+
+    async function initCamera() {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+      video.srcObject = stream;
+      return new Promise((resolve) => {
+        video.onloadedmetadata = () => {
+          resolve(video);
+        };
+      });
+    }
+
+    // Initialize MediaPipe Hands
+    const hands = new Hands({locateFile: (file) => {
+      return `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`;
+    }});
+
+    hands.setOptions({
+      maxNumHands: 2,
+      modelComplexity: 1,
+      minDetectionConfidence: 0.7,
+      minTrackingConfidence: 0.5
+    });
+
+    hands.onResults((results) => {
+      // Clear canvas
+      ctx.save();
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      // Draw the video frame
+      ctx.drawImage(results.image, 0, 0, canvas.width, canvas.height);
+
+      // Draw hand landmarks
+      if (results.multiHandLandmarks) {
+        for (const landmarks of results.multiHandLandmarks) {
+          drawConnectors(ctx, landmarks, HAND_CONNECTIONS,
+                         {color: '#00FF00', lineWidth: 2});
+          drawLandmarks(ctx, landmarks, {color: '#FF0000', lineWidth: 1});
+        }
+      }
+      ctx.restore();
+    });
+
+    async function run() {
+      await initCamera();
+
+      const camera = new Camera(video, {
+        onFrame: async () => {
+          await hands.send({image: video});
+        },
+        width: 640,
+        height: 480
+      });
+      camera.start();
+    }
+
+    run();
+  </script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
+</body>
+</html>
