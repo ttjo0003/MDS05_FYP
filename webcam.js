@@ -1,23 +1,4 @@
-// class Main {
-
-//     startWebcam() {
-//     navigator.mediaDevices.getUserMedia({
-//     video: {
-//         facingMode: 'user'
-//     },
-//     audio: false
-//     })
-//     .then((stream) => {
-//     this.video.srcObject = stream;
-//     this.video.width = IMAGE_SIZE;
-//     this.video.height = IMAGE_SIZE;
-//     this.video.addEventListener('playing', () => this.videoPlaying = true);
-//     this.video.addEventListener('paused', () => this.videoPlaying = false);
-//     })
-// }
-// }
-
-const IMAGE_SIZE = 227; // image size for the kNN model
+const IMAGE_SIZE = 227; // for feature extraction
 
 class Main {
     constructor() {
@@ -28,24 +9,32 @@ class Main {
 
         this.startWebcam();
 
-        // Capture frame button
         document.getElementById("captureBtn").addEventListener('click', () => {
             this.captureFrame();
         });
     }
 
-    // Start the webcam
     startWebcam() {
+        // Only start after the page is fully loaded
+        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+            alert("Webcam not supported in this browser.");
+            return;
+        }
+
         navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' }, audio: false })
             .then((stream) => {
                 this.video.srcObject = stream;
-                this.video.addEventListener('playing', () => this.videoPlaying = true);
-                this.video.addEventListener('paused', () => this.videoPlaying = false);
+                this.video.addEventListener('loadedmetadata', () => {
+                    this.video.play();
+                    this.videoPlaying = true;
+                });
             })
-            .catch(err => console.error("Error accessing webcam:", err));
+            .catch(err => {
+                console.error("Error accessing webcam:", err);
+                alert("Could not access webcam: " + err.message);
+            });
     }
 
-    // Capture a frame and extract features
     captureFrame() {
         if (!this.videoPlaying) {
             alert("Video not ready yet!");
@@ -53,27 +42,25 @@ class Main {
         }
 
         const ctx = this.canvas.getContext('2d');
-        // Draw the current video frame to the canvas, resizing it to IMAGE_SIZE x IMAGE_SIZE
         ctx.drawImage(this.video, 0, 0, IMAGE_SIZE, IMAGE_SIZE);
 
-        // Convert the canvas to a Tensor
+        // Convert canvas to Tensor
         const imageTensor = tf.browser.fromPixels(this.canvas)
-            .expandDims(0) // add batch dimension
+            .expandDims(0)  // batch dimension
             .toFloat()
-            .div(tf.scalar(255)); // normalize to [0,1]
+            .div(tf.scalar(255)); // normalize
 
-        // For demonstration, flatten the tensor into a feature vector
+        // Flatten to feature vector
         const featureVector = imageTensor.flatten();
         featureVector.data().then(data => {
             this.output.innerText = `Feature vector length: ${data.length}\nFirst 20 values:\n${Array.from(data).slice(0,20).map(v => v.toFixed(3)).join(', ')}`;
         });
 
-        // Clean up tensor memory
         imageTensor.dispose();
     }
 }
 
-// Initialize Main
+// Initialize after page fully loaded
 window.addEventListener('load', () => {
-    const main = new Main();
+    new Main();
 });
