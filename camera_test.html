@@ -1,93 +1,121 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <title>MediaPipe Hands Demo</title>
-  <style>
-    body {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      background: #222;
-      color: #fff;
-      margin: 0;
-      height: 100vh;
-    }
-    video, canvas {
-      border: 3px solid #0f0;
-      border-radius: 10px;
-    }
-  </style>
+<meta charset="UTF-8">
+<title>Video + Hand Landmarks</title>
+<style>
+  body {
+    display: flex;
+    flex-direction: row;
+    background: #222;
+    color: #fff;
+    margin: 0;
+    height: 100vh;
+    font-family: monospace;
+    align-items: center;
+    justify-content: center;
+  }
+  #video-container {
+    position: relative;
+    width: 640px;
+    height: 480px;
+  }
+  video, canvas {
+    position: absolute;
+    width: 640px;
+    height: 480px;
+    border-radius: 10px;
+  }
+  #keypointsPanel {
+    margin-left: 20px;
+    width: 400px;
+    height: 480px;
+    overflow-y: auto;
+    background: #111;
+    padding: 10px;
+    border-radius: 10px;
+  }
+  h3 {
+    margin: 0 0 10px 0;
+  }
+</style>
 </head>
 <body>
-  <h2>MediaPipe Hands Demo</h2>
-  <video id="video" width="640" height="480" autoplay muted></video>
-  <canvas id="canvas" width="640" height="480"></canvas>
 
-  <!-- MediaPipe Hands and drawing utils -->
-  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js"></script>
-  <script>
-    const video = document.getElementById('video');
-    const canvas = document.getElementById('canvas');
-    const ctx = canvas.getContext('2d');
+<div id="video-container">
+  <video id="video" autoplay muted></video>
+  <canvas id="canvas"></canvas>
+</div>
 
-    async function initCamera() {
-      const stream = await navigator.mediaDevices.getUserMedia({ video: true });
-      video.srcObject = stream;
-      return new Promise((resolve) => {
-        video.onloadedmetadata = () => {
-          resolve(video);
-        };
-      });
+<div id="keypointsPanel">
+  <h3>Current Frame Keypoints</h3>
+  <pre id="jsonOutput">{}</pre>
+</div>
+
+<!-- MediaPipe Scripts -->
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
+
+<script>
+const video = document.getElementById('video');
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+const jsonOutput = document.getElementById('jsonOutput');
+
+let frameIndex = 0;
+
+// Initialize MediaPipe Hands
+const hands = new Hands({locateFile: (file) => 
+  `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
+});
+
+hands.setOptions({
+  maxNumHands: 2,
+  modelComplexity: 1,
+  minDetectionConfidence: 0.7,
+  minTrackingConfidence: 0.5
+});
+
+hands.onResults(results => {
+  // Draw video on canvas
+  ctx.save();
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+  // Draw hand landmarks
+  if (results.multiHandLandmarks) {
+    for (let i = 0; i < results.multiHandLandmarks.length; i++) {
+      drawConnectors(ctx, results.multiHandLandmarks[i], HAND_CONNECTIONS, {color: '#00FF00', lineWidth: 2});
+      drawLandmarks(ctx, results.multiHandLandmarks[i], {color: '#FF0000', lineWidth: 2});
     }
+  }
+  ctx.restore();
 
-    // Initialize MediaPipe Hands
-    const hands = new Hands({locateFile: (file) => {
-      return `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`;
-    }});
+  // Current frame keypoints
+  const keypointFrame = {
+    sequence_id: "uuid-123",
+    timestamp: Date.now(),
+    frame_index: frameIndex,
+    left_hand_landmarks: results.multiHandLandmarks ? results.multiHandLandmarks[0] || [] : [],
+    right_hand_landmarks: results.multiHandLandmarks ? results.multiHandLandmarks[1] || [] : []
+  };
 
-    hands.setOptions({
-      maxNumHands: 2,
-      modelComplexity: 1,
-      minDetectionConfidence: 0.7,
-      minTrackingConfidence: 0.5
-    });
+  jsonOutput.textContent = JSON.stringify(keypointFrame, null, 2);
+  frameIndex++;
+});
 
-    hands.onResults((results) => {
-      // Clear canvas
-      ctx.save();
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-      // Draw the video frame
-      ctx.drawImage(results.image, 0, 0, canvas.width, canvas.height);
+// Initialize camera
+const camera = new Camera(video, {
+  onFrame: async () => {
+    await hands.send({image: video});
+  },
+  width: 640,
+  height: 480
+});
 
-      // Draw hand landmarks
-      if (results.multiHandLandmarks) {
-        for (const landmarks of results.multiHandLandmarks) {
-          drawConnectors(ctx, landmarks, HAND_CONNECTIONS,
-                         {color: '#00FF00', lineWidth: 2});
-          drawLandmarks(ctx, landmarks, {color: '#FF0000', lineWidth: 1});
-        }
-      }
-      ctx.restore();
-    });
+camera.start();
+</script>
 
-    async function run() {
-      await initCamera();
-
-      const camera = new Camera(video, {
-        onFrame: async () => {
-          await hands.send({image: video});
-        },
-        width: 640,
-        height: 480
-      });
-      camera.start();
-    }
-
-    run();
-  </script>
-  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
 </body>
 </html>
