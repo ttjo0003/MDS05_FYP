@@ -15,3 +15,4 @@ class Main {
     this.video.addEventListener('paused', () => this.videoPlaying = false);
     })
 }
+}
