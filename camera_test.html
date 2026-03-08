@@ -87,7 +87,7 @@ hands.onResults(results => {
   if (results.multiHandLandmarks) {
     for (let i = 0; i < results.multiHandLandmarks.length; i++) {
       drawConnectors(ctx, results.multiHandLandmarks[i], HAND_CONNECTIONS, {color: '#00FF00', lineWidth: 2});
-      drawLandmarks(ctx, results.multiHandLandmarks[i], {color: '#FF0000', lineWidth: 2});
+      drawLandmarks(ctx, results.multiHandLandmarks[i], {color: '#FF0000', lineWidth: 0.8});
     }
   }
   ctx.restore();
