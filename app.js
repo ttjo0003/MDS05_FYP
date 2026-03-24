@@ -20,7 +20,7 @@ hands.setOptions({
   minTrackingConfidence: 0.5
 });
 
-// 🔥 Send to backend
+// Send to backend
 async function sendFrame(data) {
   try {
     await fetch('http://localhost:3000/hand-data', {
@@ -62,10 +62,10 @@ hands.onResults(results => {
     right_hand_landmarks: results.multiHandLandmarks?.[1] || []
   };
 
-  // ✅ Keep original behavior
+  // Keep original behavior
   jsonOutput.textContent = JSON.stringify(keypointFrame, null, 2);
 
-  // ✅ New feature
+  // New feature
   sendFrame(keypointFrame);
 
   frameIndex++;

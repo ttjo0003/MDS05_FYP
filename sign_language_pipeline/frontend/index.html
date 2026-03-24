@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Real-Time Sign Language Translator</title>
+  <style>
+    body {
+      display: flex;
+      flex-direction: row;
+      background: #222;
+      color: #fff;
+      margin: 0;
+      height: 100vh;
+      font-family: monospace;
+      align-items: center;
+      justify-content: center;
+      gap: 20px;
+    }
+
+    #video-container {
+      position: relative;
+      width: 640px;
+      height: 480px;
+    }
+
+    video, canvas {
+      position: absolute;
+      width: 640px;
+      height: 480px;
+      border-radius: 10px;
+    }
+
+    #sidePanel {
+      width: 420px;
+      height: 480px;
+      overflow-y: auto;
+      background: #111;
+      padding: 12px;
+      border-radius: 10px;
+      box-sizing: border-box;
+    }
+
+    h3 {
+      margin: 0 0 10px 0;
+    }
+
+    .box {
+      background: #1a1a1a;
+      padding: 10px;
+      border-radius: 8px;
+      margin-bottom: 12px;
+    }
+
+    pre {
+      white-space: pre-wrap;
+      word-break: break-word;
+      font-size: 12px;
+    }
+
+    button {
+      padding: 8px 14px;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      margin-right: 8px;
+      font-family: monospace;
+    }
+
+    #prediction {
+      font-size: 18px;
+      font-weight: bold;
+      margin-top: 6px;
+    }
+  </style>
+</head>
+<body>
+
+  <div id="video-container">
+    <video id="video" autoplay muted playsinline></video>
+    <canvas id="canvas"></canvas>
+  </div>
+
+  <div id="sidePanel">
+    <div class="box">
+      <h3>Status</h3>
+      <div id="status">Initializing...</div>
+      <div id="frameCount">Buffered frames: 0 / 30</div>
+    </div>
+
+    <div class="box">
+      <h3>Prediction</h3>
+      <div id="prediction">Waiting...</div>
+      <div id="confidence">Confidence: --</div>
+    </div>
+
+    <div class="box">
+      <h3>Controls</h3>
+      <button id="startBtn">Start Prediction</button>
+      <button id="stopBtn">Stop Prediction</button>
+    </div>
+
+    <div class="box">
+      <h3>Current Frame Feature Info</h3>
+      <pre id="jsonOutput">[]</pre>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/holistic/holistic.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
