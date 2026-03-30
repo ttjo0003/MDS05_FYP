@@ -1,24 +1,30 @@
+// ---------- Get HTML elements (UI + video/canvas) ----------km 
 const video = document.getElementById('video');
 const canvas = document.getElementById('canvas');
 const ctx = canvas.getContext('2d');
 
+// UI elements for displaying status & results
 const jsonOutput = document.getElementById('jsonOutput');
 const statusText = document.getElementById('status');
 const frameCountText = document.getElementById('frameCount');
 const predictionText = document.getElementById('prediction');
 const confidenceText = document.getElementById('confidence');
 
+// Control buttons
 const startBtn = document.getElementById('startBtn');
 const stopBtn = document.getElementById('stopBtn');
 
+// Set canvas size (must match video for proper overlay)
 canvas.width = 640;
 canvas.height = 480;
 
-const NUM_FRAMES = 30;
-let frameIndex = 0;
-let sequenceBuffer = [];
-let isPredicting = false;
-let isSending = false;
+// ---------- Core configuration ----------
+const NUM_FRAMES = 30; // Number of frames required by LSTM model
+
+let frameIndex = 0; // Tracks current frame number
+let sequenceBuffer = []; // Stores sequence of frames (each = 225 features)
+let isPredicting = false; // Whether user has started prediction
+let isSending = false; // Prevent duplicate API calls
 
 // ---------- Initial UI ----------
 statusText.textContent = 'Camera started. Click "Start Prediction" to begin.';
@@ -26,12 +32,13 @@ frameCountText.textContent = `Buffered frames: 0 / ${NUM_FRAMES}`;
 predictionText.textContent = 'Waiting...';
 confidenceText.textContent = 'Confidence: --';
 
-// ---------- MediaPipe Holistic ----------
+// ---------- Initialize MediaPipe Holistic ----------
 const holistic = new Holistic({
   locateFile: (file) =>
     `https://cdn.jsdelivr.net/npm/@mediapipe/holistic/${file}`
 });
 
+// Configure detection/tracking settings
 holistic.setOptions({
   modelComplexity: 1,
   smoothLandmarks: true,
@@ -39,7 +46,7 @@ holistic.setOptions({
   minTrackingConfidence: 0.5
 });
 
-// ---------- Controls ----------
+// ---------- Button: Start Prediction ----------
 startBtn.addEventListener('click', () => {
   isPredicting = true;
   isSending = false;
@@ -52,6 +59,7 @@ startBtn.addEventListener('click', () => {
   statusText.textContent = 'Prediction started. Please perform a sign.';
 });
 
+// ---------- Button: Stop Prediction ----------
 stopBtn.addEventListener('click', () => {
   isPredicting = false;
   isSending = false;
@@ -61,20 +69,23 @@ stopBtn.addEventListener('click', () => {
   statusText.textContent = 'Prediction stopped.';
 });
 
-// ---------- Helper: flatten landmarks ----------
+// ---------- Convert landmarks → fixed-length array ----------
 function flattenLandmarks(landmarks, expectedCount) {
   const arr = [];
 
+   // Extract x, y, z for each landmark
   if (landmarks && landmarks.length) {
     for (const lm of landmarks) {
       arr.push(lm.x, lm.y, lm.z);
     }
   }
 
+  // Pad with zeros if missing landmarks (important for model consistency)
   while (arr.length < expectedCount * 3) {
     arr.push(0, 0, 0);
   }
 
+  // Ensure fixed size
   return arr.slice(0, expectedCount * 3);
 }
 
@@ -84,6 +95,7 @@ function extractKeypoints(results) {
   const leftHand = flattenLandmarks(results.leftHandLandmarks, 21);
   const rightHand = flattenLandmarks(results.rightHandLandmarks, 21);
 
+  // Final feature vector = 225 values (matches training input)
   return [...pose, ...leftHand, ...rightHand];
 }
 
@@ -95,6 +107,7 @@ async function sendSequence(sequence) {
     isSending = true;
     statusText.textContent = 'Sending 30-frame sequence to backend...';
 
+    // Send data to Flask backend
     const response = await fetch('http://127.0.0.1:5000/predict', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -103,17 +116,19 @@ async function sendSequence(sequence) {
 
     const result = await response.json();
 
+    // Handle error response
     if (!response.ok) {
       throw new Error(result.error || `HTTP ${response.status}`);
     }
 
+    // Display prediction result
     predictionText.textContent = result.prediction || 'Unknown';
     confidenceText.textContent = `Confidence: ${
       result.confidence !== undefined ? result.confidence : '--'
     }`;
     statusText.textContent = 'Prediction received. Click "Start Prediction" for a new sign.';
 
-    // 收到结果后自动停止，避免一直重复送同一段 sequence
+    // Reset after prediction
     isPredicting = false;
     sequenceBuffer = [];
     frameCountText.textContent = `Buffered frames: 0 / ${NUM_FRAMES}`;
@@ -125,13 +140,14 @@ async function sendSequence(sequence) {
   }
 }
 
+// ---------- Main loop: runs every frame ----------
 holistic.onResults((results) => {
   // ---------- Draw current frame ----------
   ctx.save();
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
-  // Draw pose
+  // Draw video frame onto canvas
   if (results.poseLandmarks) {
     drawConnectors(ctx, results.poseLandmarks, POSE_CONNECTIONS, {
       color: '#00BFFF',
@@ -179,20 +195,23 @@ holistic.onResults((results) => {
     feature_preview: keypoints.slice(0, 30)
   }, null, 2);
 
-  // ---------- Only collect after Start ----------
+  // ---------- Sequence collection logic ----------
   if (isPredicting && !isSending) {
     sequenceBuffer.push(keypoints);
 
+    // Keep only latest 30 frames (sliding window)
     if (sequenceBuffer.length > NUM_FRAMES) {
       sequenceBuffer.shift();
     }
 
     frameCountText.textContent = `Buffered frames: ${sequenceBuffer.length} / ${NUM_FRAMES}`;
 
+    // Show progress
     if (sequenceBuffer.length < NUM_FRAMES) {
       statusText.textContent = `Collecting frames... ${sequenceBuffer.length}/${NUM_FRAMES}`;
     }
 
+    // When 30 frames ready → send to backend
     if (sequenceBuffer.length === NUM_FRAMES) {
       sendSequence([...sequenceBuffer]);
     }
@@ -201,7 +220,7 @@ holistic.onResults((results) => {
   frameIndex++;
 });
 
-// ---------- Camera ----------
+// ---------- Initialize camera ----------
 const camera = new Camera(video, {
   onFrame: async () => {
     await holistic.send({ image: video });
@@ -210,4 +229,5 @@ const camera = new Camera(video, {
   height: 480
 });
 
+// Start webcam
 camera.start();
