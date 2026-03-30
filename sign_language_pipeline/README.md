@@ -45,6 +45,7 @@ Install required Python packages:
 
 ```bash
 pip install flask flask-cors torch numpy
+```
 
 ## 🚀 How to Run
 
