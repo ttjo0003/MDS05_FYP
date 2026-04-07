@@ -14,8 +14,8 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 VIDEO_DIR = os.path.join(BASE_DIR, "..", "data", "videos")
 JSON_PATH = os.path.join(BASE_DIR, "..", "data", "WLASL_v0.3.json")
 
-OUTPUT_DIR = os.path.join(BASE_DIR, "..", "data", "processed")
-METADATA_PATH = os.path.join(BASE_DIR, "..", "data", "metadata.csv")
+OUTPUT_DIR = os.path.join(BASE_DIR, "..", "data", "processed_holistic_pose_hand")
+METADATA_PATH = os.path.join(BASE_DIR, "..", "data", "metadata_holistic_pose_hand.csv")
 
 NUM_FRAMES = 30
 MIN_VALID_FRAMES = 5
