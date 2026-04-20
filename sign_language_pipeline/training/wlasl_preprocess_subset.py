@@ -17,8 +17,8 @@ VIDEO_DIR = r"D:\Monash University\Monash 2026 Sem 1\FIT 3164\WLASL Dataset\vide
 JSON_PATH = r"D:\Monash University\Monash 2026 Sem 1\FIT 3164\WLASL Dataset\WLASL_v0.3.json"
 
 # save subset separately
-OUTPUT_DIR = os.path.join(BASE_DIR, "..", "data", "processed_holistic_pose_hand_top5")
-METADATA_PATH = os.path.join(BASE_DIR, "..", "data", "metadata_holistic_pose_hand_top5.csv")
+OUTPUT_DIR = os.path.join(BASE_DIR, "..", "data", "v1")
+METADATA_PATH = os.path.join(BASE_DIR, "..", "data", "mdv1.csv")
 
 NUM_FRAMES = 30
 MIN_VALID_FRAMES = 5
@@ -29,7 +29,7 @@ NUM_CLASSES = 5
 # =========================
 # Option 1: set to None -> auto choose top NUM_CLASSES most frequent glosses
 # Option 2: manually write your own list of words
-TARGET_GLOSSES = None
+TARGET_GLOSSES = ["before", "computer", "drink", "thin", "who"]
 
 # Example manual setting:
 # TARGET_GLOSSES = [
@@ -65,6 +65,8 @@ def extract_pose_hand_keypoints(results):
         pose = np.array(
             [[lm.x, lm.y, lm.z] for lm in results.pose_landmarks.landmark]
         ).flatten()
+
+        pose = pose[11:]   # keep landmarks 11–32 only
 
     if results.left_hand_landmarks:
         left_hand = np.array(
