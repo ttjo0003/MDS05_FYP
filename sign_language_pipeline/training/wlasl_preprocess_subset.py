@@ -23,6 +23,7 @@ METADATA_PATH = os.path.join(BASE_DIR, "..", "data", "mdv1.csv")
 NUM_FRAMES = 30
 MIN_VALID_FRAMES = 5
 NUM_CLASSES = 5
+FEATURE_DIM = 214
 
 # =========================
 # CHOOSE TARGET WORDS
@@ -54,31 +55,46 @@ holistic = mp_holistic.Holistic(
 
 # =========================
 # EXTRACT POSE + LEFT HAND + RIGHT HAND
-# total per frame = 225
+# total per frame = 214
+# pose = 88, left hand = 63, right hand = 63
 # =========================
 def extract_pose_hand_keypoints(results):
-    pose = np.zeros(33 * 3)
-    left_hand = np.zeros(21 * 3)
-    right_hand = np.zeros(21 * 3)
+    pose = np.zeros(88, dtype=np.float32)
+    left_hand = np.zeros(21 * 3, dtype=np.float32)
+    right_hand = np.zeros(21 * 3, dtype=np.float32)
 
     if results.pose_landmarks:
-        pose = np.array(
-            [[lm.x, lm.y, lm.z] for lm in results.pose_landmarks.landmark]
+        pose_full = np.array(
+            [[lm.x, lm.y, lm.z] for lm in results.pose_landmarks.landmark],
+            dtype=np.float32
         ).flatten()
 
-        pose = pose[11:]   # keep landmarks 11–32 only
+        # keep the same teammate-defined logic so pose length becomes 88
+        pose = pose_full[11:]
+
+        # safety check
+        if pose.shape[0] != 88:
+            pose = np.zeros(88, dtype=np.float32)
 
     if results.left_hand_landmarks:
         left_hand = np.array(
-            [[lm.x, lm.y, lm.z] for lm in results.left_hand_landmarks.landmark]
+            [[lm.x, lm.y, lm.z] for lm in results.left_hand_landmarks.landmark],
+            dtype=np.float32
         ).flatten()
 
     if results.right_hand_landmarks:
         right_hand = np.array(
-            [[lm.x, lm.y, lm.z] for lm in results.right_hand_landmarks.landmark]
+            [[lm.x, lm.y, lm.z] for lm in results.right_hand_landmarks.landmark],
+            dtype=np.float32
         ).flatten()
 
-    return np.concatenate([pose, left_hand, right_hand])
+    keypoints = np.concatenate([pose, left_hand, right_hand])
+
+    # final safety check
+    if keypoints.shape[0] != FEATURE_DIM:
+        return np.zeros(FEATURE_DIM, dtype=np.float32)
+
+    return keypoints
 
 # =========================
 # SAMPLE FRAMES UNIFORMLY
@@ -179,12 +195,14 @@ for entry in tqdm(filtered_data):
 
         if not os.path.exists(video_path):
             failed_count += 1
+            print(f"Missing video: {video_path}")
             continue
 
         if os.path.exists(save_path):
             try:
                 sequence = np.load(save_path)
-                if sequence.shape == (NUM_FRAMES, 225):
+
+                if sequence.shape == (NUM_FRAMES, FEATURE_DIM):
                     valid_frames = int(np.sum(np.any(sequence != 0, axis=1)))
 
                     row = {
@@ -207,12 +225,14 @@ for entry in tqdm(filtered_data):
 
                     print(f"{video_id} already has npy, metadata restored")
                     continue
+
             except Exception as e:
                 print(f"Failed to load existing npy for {video_id}: {e}")
 
         frames = sample_frames(video_path, NUM_FRAMES)
         if len(frames) != NUM_FRAMES:
             failed_count += 1
+            print(f"{video_id} skipped: expected {NUM_FRAMES} frames, got {len(frames)}")
             continue
 
         sequence = []
@@ -223,10 +243,11 @@ for entry in tqdm(filtered_data):
             keypoints = extract_pose_hand_keypoints(results)
             sequence.append(keypoints)
 
-        sequence = np.array(sequence)
+        sequence = np.array(sequence, dtype=np.float32)
 
-        if sequence.shape != (NUM_FRAMES, 225):
+        if sequence.shape != (NUM_FRAMES, FEATURE_DIM):
             failed_count += 1
+            print(f"{video_id} skipped: wrong shape {sequence.shape}")
             continue
 
         valid_frames = int(np.sum(np.any(sequence != 0, axis=1)))
@@ -234,6 +255,7 @@ for entry in tqdm(filtered_data):
 
         if valid_frames < MIN_VALID_FRAMES:
             failed_count += 1
+            print(f"{video_id} skipped: valid_frames < {MIN_VALID_FRAMES}")
             continue
 
         np.save(save_path, sequence)
@@ -270,13 +292,16 @@ print("Skipped existing:", skipped_existing_count)
 print("Skipped non-target gloss videos:", skipped_non_target_count)
 print("Failed / filtered:", failed_count)
 
-final_df = pd.read_csv(METADATA_PATH, dtype={"video_id": str})
-final_df = final_df.drop_duplicates(subset=["video_id"], keep="last").reset_index(drop=True)
-final_df.to_csv(METADATA_PATH, index=False, encoding="utf-8-sig")
+if os.path.exists(METADATA_PATH) and os.path.getsize(METADATA_PATH) > 0:
+    final_df = pd.read_csv(METADATA_PATH, dtype={"video_id": str})
+    final_df = final_df.drop_duplicates(subset=["video_id"], keep="last").reset_index(drop=True)
+    final_df.to_csv(METADATA_PATH, index=False, encoding="utf-8-sig")
 
-print("Final metadata rows:", len(final_df))
+    print("Final metadata rows:", len(final_df))
 
-# show class distribution
-final_counts = final_df["gloss"].value_counts()
-print("\nFinal gloss distribution:")
-print(final_counts)
+    # show class distribution
+    final_counts = final_df["gloss"].value_counts()
+    print("\nFinal gloss distribution:")
+    print(final_counts)
+else:
+    print("No metadata file was created.")
