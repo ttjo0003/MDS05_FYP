@@ -13,7 +13,7 @@ CORS(app)
 # =========================
 # Config
 # =========================
-INPUT_SIZE = 225
+INPUT_SIZE = 214
 HIDDEN_SIZE = 128
 NUM_LAYERS = 2
 TARGET_FRAMES = 30
@@ -25,12 +25,12 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 MODEL_CANDIDATES = [
     os.path.join(BASE_DIR, "best_sign_lstm_updated.pth"),
-    os.path.join(BASE_DIR, "..", "model", "best_sign_lstm_updated.pth"),
+    os.path.join(BASE_DIR, "..", "model", "best_sign_lstm_updated_new.pth"),
 ]
 
 LABEL_MAP_CANDIDATES = [
     os.path.join(BASE_DIR, "label_map_updated.json"),
-    os.path.join(BASE_DIR, "..", "model", "label_map_updated.json"),
+    os.path.join(BASE_DIR, "..", "model", "label_map_updated_new.json"),
 ]
 
 
@@ -55,17 +55,9 @@ if LABEL_MAP_PATH is None:
 # Model
 # =========================
 class SignLSTM(nn.Module):
-    def __init__(
-        self,
-        input_size: int,
-        hidden_size: int,
-        num_layers: int,
-        num_classes: int,
-    ) -> None:
+    def __init__(self, input_size, hidden_size, num_layers, num_classes):
         super().__init__()
 
-        # CNN block inferred from checkpoint keys:
-        # cnn.0.*, cnn.1.*
         self.cnn = nn.Sequential(
             nn.Conv1d(
                 in_channels=input_size,
@@ -77,7 +69,6 @@ class SignLSTM(nn.Module):
             nn.ReLU(),
         )
 
-        # Bidirectional LSTM inferred from reverse weights in checkpoint
         self.lstm = nn.LSTM(
             input_size=input_size,
             hidden_size=hidden_size,
@@ -87,28 +78,29 @@ class SignLSTM(nn.Module):
             bidirectional=True,
         )
 
-        # hidden_size * 2 because bidirectional
         self.layer_norm = nn.LayerNorm(hidden_size * 2)
-        self.attention = nn.Linear(hidden_size * 2, 1)
+
+        self.attention = nn.Sequential(
+            nn.Linear(hidden_size * 2, hidden_size),
+            nn.Tanh(),
+            nn.Linear(hidden_size, 1)
+        )
+
         self.fc = nn.Linear(hidden_size * 2, num_classes)
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        # x shape: (batch, time, features) = (B, 30, 225)
-
-        # Conv1d expects (batch, channels, length)
-        x = x.transpose(1, 2)  # (B, 225, 30)
+    def forward(self, x):
+        x = x.transpose(1, 2)   # (B, 225, 30)
         x = self.cnn(x)
-        x = x.transpose(1, 2)  # (B, 30, 225)
+        x = x.transpose(1, 2)   # (B, 30, 225)
 
-        lstm_out, _ = self.lstm(x)  # (B, 30, 256)
+        lstm_out, _ = self.lstm(x)   # (B, 30, 256)
         lstm_out = self.layer_norm(lstm_out)
 
-        # Attention over time dimension
-        attn_scores = self.attention(lstm_out)          # (B, 30, 1)
+        attn_scores = self.attention(lstm_out)      # (B, 30, 1)
         attn_weights = torch.softmax(attn_scores, dim=1)
         context = torch.sum(attn_weights * lstm_out, dim=1)  # (B, 256)
 
-        logits = self.fc(context)  # (B, num_classes)
+        logits = self.fc(context)
         return logits
 
 
@@ -141,25 +133,24 @@ model.eval()
 # Helper functions
 # =========================
 def count_non_zero_frames(sequence: np.ndarray) -> int:
-    # sequence shape: (30, 225)
+    # sequence shape: (30, 214)
     non_zero_mask = np.any(np.abs(sequence) > 1e-8, axis=1)
     return int(np.sum(non_zero_mask))
 
 
 def count_frames_with_hand_signal(sequence: np.ndarray) -> int:
     # feature layout:
-    # pose: 0:99
-    # left hand: 99:162
-    # right hand: 162:225
-    left = sequence[:, 99:162]
-    right = sequence[:, 162:225]
+    # pose: 0:88
+    # left hand: 88:151
+    # right hand: 151:214
+    left = sequence[:, 88:151]
+    right = sequence[:, 151:214]
 
     left_non_zero = np.any(np.abs(left) > 1e-8, axis=1)
     right_non_zero = np.any(np.abs(right) > 1e-8, axis=1)
 
     hand_non_zero = np.logical_or(left_non_zero, right_non_zero)
     return int(np.sum(hand_non_zero))
-
 
 def build_top_k(probs: torch.Tensor, k: int = TOP_K) -> list[dict]:
     k = min(k, probs.shape[1])
@@ -232,7 +223,7 @@ def predict():
                 }
             ), 400
 
-        x = torch.tensor(sequence, dtype=torch.float32).unsqueeze(0)  # (1, 30, 225)
+        x = torch.tensor(sequence, dtype=torch.float32).unsqueeze(0)  # (1, 30, 214)
 
         with torch.no_grad():
             logits = model(x)

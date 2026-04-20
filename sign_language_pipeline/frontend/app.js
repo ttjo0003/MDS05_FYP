@@ -55,12 +55,34 @@ function flattenLandmarks(landmarks, expectedCount) {
   return arr.slice(0, expectedCount * 3);
 }
 
-function extractKeypoints(results) {
-  const pose = flattenLandmarks(results.poseLandmarks, 33);
-  const leftHand = flattenLandmarks(results.leftHandLandmarks, 21);
-  const rightHand = flattenLandmarks(results.rightHandLandmarks, 21);
+function flattenLandmarks(landmarks, expectedCount) {
+  const arr = [];
 
-  return [...pose, ...leftHand, ...rightHand];
+  if (landmarks && landmarks.length) {
+    for (const lm of landmarks) {
+      arr.push(lm.x, lm.y, lm.z);
+    }
+  }
+
+  while (arr.length < expectedCount * 3) {
+    arr.push(0, 0, 0);
+  }
+
+  return arr.slice(0, expectedCount * 3);
+}
+
+function extractKeypoints(results) {
+  let pose = new Array(88).fill(0);
+
+  if (results.poseLandmarks && results.poseLandmarks.length) {
+    const fullPose = flattenLandmarks(results.poseLandmarks, 33); // 99
+    pose = fullPose.slice(11); // 88
+  }
+
+  const leftHand = flattenLandmarks(results.leftHandLandmarks, 21);   // 63
+  const rightHand = flattenLandmarks(results.rightHandLandmarks, 21); // 63
+
+  return [...pose, ...leftHand, ...rightHand]; // 214
 }
 
 function hasValidHands(results) {
