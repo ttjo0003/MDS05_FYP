@@ -12,11 +12,9 @@ from collections import Counter
 # =========================
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
-# Adjust the file path to point to your local dataset directory
 VIDEO_DIR = r"D:\Monash University\Monash 2026 Sem 1\FIT 3164\WLASL Dataset\videos"
 JSON_PATH = r"D:\Monash University\Monash 2026 Sem 1\FIT 3164\WLASL Dataset\WLASL_v0.3.json"
 
-# save subset separately
 OUTPUT_DIR = os.path.join(BASE_DIR, "..", "data", "v1")
 METADATA_PATH = os.path.join(BASE_DIR, "..", "data", "mdv1.csv")
 
@@ -28,8 +26,6 @@ FEATURE_DIM = 214
 # =========================
 # CHOOSE TARGET WORDS
 # =========================
-# Option 1: set to None -> auto choose top NUM_CLASSES most frequent glosses
-# Option 2: manually write your own list of words
 TARGET_GLOSSES = ["before", "computer", "drink", "thin", "who"]
 
 # Example manual setting:
@@ -54,27 +50,23 @@ holistic = mp_holistic.Holistic(
 )
 
 # =========================
-# EXTRACT POSE + LEFT HAND + RIGHT HAND
-# total per frame = 214
-# pose = 88, left hand = 63, right hand = 63
+# EXTRACT KEYPOINTS
+# 214 dims total:
+# pose (landmarks 11-32 only): 22 * 4 = 88  -> x, y, z, visibility
+# left hand: 21 * 3 = 63
+# right hand: 21 * 3 = 63
 # =========================
 def extract_pose_hand_keypoints(results):
-    pose = np.zeros(88, dtype=np.float32)
-    left_hand = np.zeros(21 * 3, dtype=np.float32)
-    right_hand = np.zeros(21 * 3, dtype=np.float32)
+    pose = np.zeros(22 * 4, dtype=np.float32)        # 88
+    left_hand = np.zeros(21 * 3, dtype=np.float32)   # 63
+    right_hand = np.zeros(21 * 3, dtype=np.float32)  # 63
 
     if results.pose_landmarks:
-        pose_full = np.array(
-            [[lm.x, lm.y, lm.z] for lm in results.pose_landmarks.landmark],
+        pose_landmarks = results.pose_landmarks.landmark[11:33]  # upper body only
+        pose = np.array(
+            [[lm.x, lm.y, lm.z, lm.visibility] for lm in pose_landmarks],
             dtype=np.float32
         ).flatten()
-
-        # keep the same teammate-defined logic so pose length becomes 88
-        pose = pose_full[11:]
-
-        # safety check
-        if pose.shape[0] != 88:
-            pose = np.zeros(88, dtype=np.float32)
 
     if results.left_hand_landmarks:
         left_hand = np.array(
@@ -90,7 +82,6 @@ def extract_pose_hand_keypoints(results):
 
     keypoints = np.concatenate([pose, left_hand, right_hand])
 
-    # final safety check
     if keypoints.shape[0] != FEATURE_DIM:
         return np.zeros(FEATURE_DIM, dtype=np.float32)
 
@@ -160,7 +151,9 @@ if os.path.exists(METADATA_PATH):
     processed_ids = set(existing_df["video_id"].astype(str).tolist())
     print(f"Loaded existing metadata: {len(existing_df)} rows")
 else:
-    existing_df = pd.DataFrame(columns=["video_id", "gloss", "split", "path", "valid_frames"])
+    existing_df = pd.DataFrame(
+        columns=["video_id", "gloss", "split", "path", "valid_frames"]
+    )
     processed_ids = set()
     print("No existing metadata found, starting fresh")
 
@@ -299,7 +292,6 @@ if os.path.exists(METADATA_PATH) and os.path.getsize(METADATA_PATH) > 0:
 
     print("Final metadata rows:", len(final_df))
 
-    # show class distribution
     final_counts = final_df["gloss"].value_counts()
     print("\nFinal gloss distribution:")
     print(final_counts)

@@ -24,13 +24,13 @@ TOP_K = 3
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 MODEL_CANDIDATES = [
-    os.path.join(BASE_DIR, "best_sign_lstm_updated.pth"),
-    os.path.join(BASE_DIR, "..", "model", "best_sign_lstm_updated_new.pth"),
+    os.path.join(BASE_DIR, "best_sign_lstm_v1.pth"),
+    os.path.join(BASE_DIR, "..", "model", "best_sign_lstm_v1.pth"),
 ]
 
 LABEL_MAP_CANDIDATES = [
-    os.path.join(BASE_DIR, "label_map_updated.json"),
-    os.path.join(BASE_DIR, "..", "model", "label_map_updated_new.json"),
+    os.path.join(BASE_DIR, "label_map_v1.json"),
+    os.path.join(BASE_DIR, "..", "model", "label_map_v1.json"),
 ]
 
 
@@ -89,9 +89,9 @@ class SignLSTM(nn.Module):
         self.fc = nn.Linear(hidden_size * 2, num_classes)
 
     def forward(self, x):
-        x = x.transpose(1, 2)   # (B, 225, 30)
+        x = x.transpose(1, 2)   # (B, 214, 30)
         x = self.cnn(x)
-        x = x.transpose(1, 2)   # (B, 30, 225)
+        x = x.transpose(1, 2)   # (B, 30, 214)
 
         lstm_out, _ = self.lstm(x)   # (B, 30, 256)
         lstm_out = self.layer_norm(lstm_out)

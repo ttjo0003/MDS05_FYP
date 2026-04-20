@@ -14,20 +14,21 @@ const stopBtn = document.getElementById('stopBtn');
 canvas.width = 640;
 canvas.height = 480;
 
-
-const TARGET_FRAMES = 30;          
-const MAX_CAPTURE_FRAMES = 90;     
-const MIN_VALID_FRAMES = 20;       
+const TARGET_FRAMES = 30;
+const MAX_CAPTURE_FRAMES = 90;
+const MIN_VALID_FRAMES = 20;
 const BACKEND_URL = 'http://127.0.0.1:5000/predict';
 
 let frameIndex = 0;
 let rawSequenceBuffer = [];
 let isPredicting = false;
 let isSending = false;
+
 statusText.textContent = 'Camera started. Click "Start Prediction" to begin.';
 frameCountText.textContent = `Captured valid frames: 0 / ${MAX_CAPTURE_FRAMES}`;
 predictionText.textContent = 'Waiting...';
 confidenceText.textContent = 'Confidence: --';
+
 const holistic = new Holistic({
   locateFile: (file) =>
     `https://cdn.jsdelivr.net/npm/@mediapipe/holistic/${file}`
@@ -39,23 +40,8 @@ holistic.setOptions({
   minDetectionConfidence: 0.5,
   minTrackingConfidence: 0.5
 });
-function flattenLandmarks(landmarks, expectedCount) {
-  const arr = [];
 
-  if (landmarks && landmarks.length) {
-    for (const lm of landmarks) {
-      arr.push(lm.x, lm.y, lm.z);
-    }
-  }
-
-  while (arr.length < expectedCount * 3) {
-    arr.push(0, 0, 0);
-  }
-
-  return arr.slice(0, expectedCount * 3);
-}
-
-function flattenLandmarks(landmarks, expectedCount) {
+function flattenHandLandmarks(landmarks, expectedCount) {
   const arr = [];
 
   if (landmarks && landmarks.length) {
@@ -72,17 +58,24 @@ function flattenLandmarks(landmarks, expectedCount) {
 }
 
 function extractKeypoints(results) {
-  let pose = new Array(88).fill(0);
+  let pose = new Array(88).fill(0); // 22 landmarks * 4 values
+  const leftHand = flattenHandLandmarks(results.leftHandLandmarks, 21);   // 63
+  const rightHand = flattenHandLandmarks(results.rightHandLandmarks, 21); // 63
 
-  if (results.poseLandmarks && results.poseLandmarks.length) {
-    const fullPose = flattenLandmarks(results.poseLandmarks, 33); // 99
-    pose = fullPose.slice(11); // 88
+  if (results.poseLandmarks && results.poseLandmarks.length >= 33) {
+    const upperBodyPose = results.poseLandmarks.slice(11, 33); // landmarks 11-32
+
+    const poseArr = [];
+    for (const lm of upperBodyPose) {
+      poseArr.push(lm.x, lm.y, lm.z, lm.visibility ?? 0);
+    }
+
+    if (poseArr.length === 88) {
+      pose = poseArr;
+    }
   }
 
-  const leftHand = flattenLandmarks(results.leftHandLandmarks, 21);   // 63
-  const rightHand = flattenLandmarks(results.rightHandLandmarks, 21); // 63
-
-  return [...pose, ...leftHand, ...rightHand]; // 214
+  return [...pose, ...leftHand, ...rightHand]; // total 214
 }
 
 function hasValidHands(results) {
@@ -132,6 +125,33 @@ function setIdleUI() {
   isSending = false;
   statusText.textContent = 'Prediction finished. Click "Start Prediction" to try again.';
   frameCountText.textContent = `Captured valid frames: 0 / ${MAX_CAPTURE_FRAMES}`;
+}
+
+function drawUpperBodyPose(ctx, poseLandmarks) {
+  if (!poseLandmarks || poseLandmarks.length < 33) return;
+
+  const upperBodyIndices = Array.from({ length: 22 }, (_, i) => i + 11);
+
+  const upperBodyConnections = POSE_CONNECTIONS.filter(([start, end]) =>
+    start >= 11 && start <= 32 && end >= 11 && end <= 32
+  );
+
+  drawConnectors(
+    ctx,
+    poseLandmarks,
+    upperBodyConnections,
+    {
+      color: '#00BFFF',
+      lineWidth: 2
+    }
+  );
+
+  const upperBodyLandmarks = upperBodyIndices.map(i => poseLandmarks[i]);
+
+  drawLandmarks(ctx, upperBodyLandmarks, {
+    color: '#FFD700',
+    radius: 2
+  });
 }
 
 async function sendSequence(sequence) {
@@ -213,6 +233,7 @@ async function finalizePrediction() {
 
   await sendSequence(sampledSequence);
 }
+
 startBtn.addEventListener('click', () => {
   if (isSending) return;
 
@@ -231,20 +252,14 @@ stopBtn.addEventListener('click', async () => {
   isPredicting = false;
   await finalizePrediction();
 });
+
 holistic.onResults(async (results) => {
   ctx.save();
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
   if (results.poseLandmarks) {
-    drawConnectors(ctx, results.poseLandmarks, POSE_CONNECTIONS, {
-      color: '#00BFFF',
-      lineWidth: 2
-    });
-    drawLandmarks(ctx, results.poseLandmarks, {
-      color: '#FFD700',
-      radius: 2
-    });
+  drawUpperBodyPose(ctx, results.poseLandmarks);
   }
 
   if (results.leftHandLandmarks) {
@@ -276,6 +291,9 @@ holistic.onResults(async (results) => {
   jsonOutput.textContent = JSON.stringify({
     frame_index: frameIndex,
     feature_length: keypoints.length,
+    pose_range: '0:88',
+    left_hand_range: '88:151',
+    right_hand_range: '151:214',
     left_hand_detected: !!(results.leftHandLandmarks && results.leftHandLandmarks.length),
     right_hand_detected: !!(results.rightHandLandmarks && results.rightHandLandmarks.length),
     pose_detected: !!(results.poseLandmarks && results.poseLandmarks.length),
@@ -310,6 +328,7 @@ holistic.onResults(async (results) => {
 
   frameIndex++;
 });
+
 const camera = new Camera(video, {
   onFrame: async () => {
     await holistic.send({ image: video });
