@@ -1,0 +1,16 @@
+{
+  "label2id": {
+    "before": 0,
+    "computer": 1,
+    "drink": 2,
+    "thin": 3,
+    "who": 4
+  },
+  "id2label": {
+    "0": "before",
+    "1": "computer",
+    "2": "drink",
+    "3": "thin",
+    "4": "who"
+  }
+}
