@@ -2,7 +2,6 @@ const video = document.getElementById('video');
 const canvas = document.getElementById('canvas');
 const ctx = canvas.getContext('2d');
 
-const jsonOutput = document.getElementById('jsonOutput');
 const statusText = document.getElementById('status');
 const frameCountText = document.getElementById('frameCount');
 const predictionText = document.getElementById('prediction');
@@ -10,6 +9,13 @@ const confidenceText = document.getElementById('confidence');
 
 const startBtn = document.getElementById('startBtn');
 const stopBtn = document.getElementById('stopBtn');
+
+const progressFill = document.getElementById('progressFill');
+const progressPercent = document.getElementById('progressPercent');
+const overlayStatus = document.getElementById('overlayStatus');
+
+const predictionHistoryBox = document.getElementById('predictionHistory');
+const previousConfidenceDisplay = document.getElementById('previousConfidence');
 
 canvas.width = 640;
 canvas.height = 480;
@@ -24,10 +30,77 @@ let rawSequenceBuffer = [];
 let isPredicting = false;
 let isSending = false;
 
+let attemptCount = 0;
+let predictedWords = [];
+let latestCompletedConfidence = '--';
+
 statusText.textContent = 'Camera started. Click "Start Prediction" to begin.';
-frameCountText.textContent = `Captured valid frames: 0 / ${MAX_CAPTURE_FRAMES}`;
 predictionText.textContent = 'Waiting...';
 confidenceText.textContent = 'Confidence: --';
+
+function updateProgressUI(current, total) {
+  const safeTotal = Math.max(total, 1);
+  const percent = Math.min((current / safeTotal) * 100, 100);
+
+  frameCountText.textContent = `Captured valid frames: ${current} / ${total}`;
+  progressPercent.textContent = `${Math.round(percent)}%`;
+  progressFill.style.width = `${percent}%`;
+}
+
+function renderPredictionHistory() {
+  if (!predictionHistoryBox) return;
+
+  if (predictedWords.length === 0) {
+    predictionHistoryBox.innerHTML = `
+      <div class="history-empty">No prediction history yet</div>
+    `;
+  } else {
+    predictionHistoryBox.innerHTML = `
+      <div class="history-item">
+        <div class="history-word">${predictedWords.join(' ')}</div>
+      </div>
+    `;
+  }
+
+  if (previousConfidenceDisplay) {
+    previousConfidenceDisplay.textContent = `Previous confidence: ${latestCompletedConfidence}`;
+  }
+}
+
+function resetCaptureState() {
+  rawSequenceBuffer = [];
+  frameIndex = 0;
+  updateProgressUI(0, MAX_CAPTURE_FRAMES);
+}
+
+function setIdleUI() {
+  isPredicting = false;
+  isSending = false;
+  statusText.textContent = 'Prediction finished. Click "Start Prediction" to try again.';
+  overlayStatus.textContent = 'Ready to start';
+  startBtn.disabled = false;
+  stopBtn.disabled = false;
+}
+
+function setRecordingUI() {
+  predictionText.textContent = 'Recording...';
+  confidenceText.textContent = 'Confidence: --';
+  statusText.textContent = 'Recording gesture. Perform one complete sign, then click "Stop Prediction".';
+  overlayStatus.textContent = 'Recording';
+  startBtn.disabled = true;
+  stopBtn.disabled = false;
+  resetCaptureState();
+}
+
+function setProcessingUI() {
+  statusText.textContent = 'Finalizing gesture sequence...';
+  overlayStatus.textContent = 'Processing';
+  startBtn.disabled = true;
+  stopBtn.disabled = true;
+}
+
+updateProgressUI(0, MAX_CAPTURE_FRAMES);
+renderPredictionHistory();
 
 const holistic = new Holistic({
   locateFile: (file) =>
@@ -58,14 +131,14 @@ function flattenHandLandmarks(landmarks, expectedCount) {
 }
 
 function extractKeypoints(results) {
-  let pose = new Array(88).fill(0); // 22 landmarks * 4 values
-  const leftHand = flattenHandLandmarks(results.leftHandLandmarks, 21);   // 63
-  const rightHand = flattenHandLandmarks(results.rightHandLandmarks, 21); // 63
+  let pose = new Array(88).fill(0);
+  const leftHand = flattenHandLandmarks(results.leftHandLandmarks, 21);
+  const rightHand = flattenHandLandmarks(results.rightHandLandmarks, 21);
 
   if (results.poseLandmarks && results.poseLandmarks.length >= 33) {
-    const upperBodyPose = results.poseLandmarks.slice(11, 33); // landmarks 11-32
-
+    const upperBodyPose = results.poseLandmarks.slice(11, 33);
     const poseArr = [];
+
     for (const lm of upperBodyPose) {
       poseArr.push(lm.x, lm.y, lm.z, lm.visibility ?? 0);
     }
@@ -75,7 +148,7 @@ function extractKeypoints(results) {
     }
   }
 
-  return [...pose, ...leftHand, ...rightHand]; // total 214
+  return [...pose, ...leftHand, ...rightHand];
 }
 
 function hasValidHands(results) {
@@ -91,7 +164,7 @@ function hasValidPose(results) {
 function countNonZeroFrames(sequence) {
   let count = 0;
   for (const frame of sequence) {
-    const anyNonZero = frame.some(v => Math.abs(v) > 1e-8);
+    const anyNonZero = frame.some((v) => Math.abs(v) > 1e-8);
     if (anyNonZero) count += 1;
   }
   return count;
@@ -114,19 +187,6 @@ function uniformSampleFrames(frames, targetCount = TARGET_FRAMES) {
   return sampled;
 }
 
-function resetCaptureState() {
-  rawSequenceBuffer = [];
-  frameIndex = 0;
-  frameCountText.textContent = `Captured valid frames: 0 / ${MAX_CAPTURE_FRAMES}`;
-}
-
-function setIdleUI() {
-  isPredicting = false;
-  isSending = false;
-  statusText.textContent = 'Prediction finished. Click "Start Prediction" to try again.';
-  frameCountText.textContent = `Captured valid frames: 0 / ${MAX_CAPTURE_FRAMES}`;
-}
-
 function drawUpperBodyPose(ctx, poseLandmarks) {
   if (!poseLandmarks || poseLandmarks.length < 33) return;
 
@@ -136,17 +196,12 @@ function drawUpperBodyPose(ctx, poseLandmarks) {
     start >= 11 && start <= 32 && end >= 11 && end <= 32
   );
 
-  drawConnectors(
-    ctx,
-    poseLandmarks,
-    upperBodyConnections,
-    {
-      color: '#00BFFF',
-      lineWidth: 2
-    }
-  );
+  drawConnectors(ctx, poseLandmarks, upperBodyConnections, {
+    color: '#00BFFF',
+    lineWidth: 2
+  });
 
-  const upperBodyLandmarks = upperBodyIndices.map(i => poseLandmarks[i]);
+  const upperBodyLandmarks = upperBodyIndices.map((i) => poseLandmarks[i]);
 
   drawLandmarks(ctx, upperBodyLandmarks, {
     color: '#FFD700',
@@ -159,7 +214,8 @@ async function sendSequence(sequence) {
 
   try {
     isSending = true;
-    statusText.textContent = 'Sending sampled 30-frame sequence to backend...';
+    statusText.textContent = 'Sending 30-frame sequence to backend...';
+    overlayStatus.textContent = 'Sending';
 
     const response = await fetch(BACKEND_URL, {
       method: 'POST',
@@ -173,25 +229,27 @@ async function sendSequence(sequence) {
       throw new Error(result.error || `HTTP ${response.status}`);
     }
 
-    predictionText.textContent = result.prediction || 'Unknown';
+    const finalPrediction = result.prediction || 'Unknown';
+    const finalConfidence =
+      result.confidence !== undefined && result.confidence !== null
+        ? result.confidence
+        : '--';
 
-    if (result.confidence !== undefined && result.confidence !== null) {
-      confidenceText.textContent = `Confidence: ${result.confidence}`;
-    } else {
-      confidenceText.textContent = 'Confidence: --';
-    }
+    predictionText.textContent = finalPrediction;
+    confidenceText.textContent = `Confidence: ${finalConfidence}`;
 
-    if (result.top_k && Array.isArray(result.top_k)) {
-      jsonOutput.textContent = JSON.stringify({
-        sampled_frames: sequence.length,
-        backend_result: result
-      }, null, 2);
-    }
+    predictedWords.push(finalPrediction);
+    latestCompletedConfidence = finalConfidence;
+    renderPredictionHistory();
 
     statusText.textContent = result.message || 'Prediction received.';
+    overlayStatus.textContent = 'Completed';
   } catch (err) {
     console.error(err);
+    predictionText.textContent = 'Error';
+    confidenceText.textContent = 'Confidence: --';
     statusText.textContent = `Backend error: ${err.message}`;
+    overlayStatus.textContent = 'Error';
   } finally {
     resetCaptureState();
     setIdleUI();
@@ -205,8 +263,10 @@ async function finalizePrediction() {
     statusText.textContent = `Not enough valid gesture frames. Need at least ${MIN_VALID_FRAMES}, got ${rawSequenceBuffer.length}.`;
     predictionText.textContent = 'Try again';
     confidenceText.textContent = 'Confidence: --';
-    resetCaptureState();
+    overlayStatus.textContent = 'Too few frames';
     isPredicting = false;
+    startBtn.disabled = false;
+    stopBtn.disabled = false;
     return;
   }
 
@@ -216,8 +276,10 @@ async function finalizePrediction() {
     statusText.textContent = 'Failed to build a valid 30-frame sequence.';
     predictionText.textContent = 'Try again';
     confidenceText.textContent = 'Confidence: --';
-    resetCaptureState();
+    overlayStatus.textContent = 'Sampling failed';
     isPredicting = false;
+    startBtn.disabled = false;
+    stopBtn.disabled = false;
     return;
   }
 
@@ -226,8 +288,10 @@ async function finalizePrediction() {
     statusText.textContent = `Too many empty frames after sampling (${nonZeroFrames}/${TARGET_FRAMES}). Please sign more clearly.`;
     predictionText.textContent = 'Try again';
     confidenceText.textContent = 'Confidence: --';
-    resetCaptureState();
+    overlayStatus.textContent = 'Low-quality frames';
     isPredicting = false;
+    startBtn.disabled = false;
+    stopBtn.disabled = false;
     return;
   }
 
@@ -237,19 +301,20 @@ async function finalizePrediction() {
 startBtn.addEventListener('click', () => {
   if (isSending) return;
 
+  attemptCount += 1;
   isPredicting = true;
-  resetCaptureState();
 
-  predictionText.textContent = 'Recording...';
-  confidenceText.textContent = 'Confidence: --';
-  statusText.textContent = 'Recording gesture. Perform one complete sign, then click "Stop Prediction".';
+  // keep existing successful history visible during the new attempt
+  renderPredictionHistory();
+
+  setRecordingUI();
 });
 
 stopBtn.addEventListener('click', async () => {
   if (!isPredicting || isSending) return;
 
-  statusText.textContent = 'Finalizing gesture sequence...';
   isPredicting = false;
+  setProcessingUI();
   await finalizePrediction();
 });
 
@@ -259,7 +324,7 @@ holistic.onResults(async (results) => {
   ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
   if (results.poseLandmarks) {
-  drawUpperBodyPose(ctx, results.poseLandmarks);
+    drawUpperBodyPose(ctx, results.poseLandmarks);
   }
 
   if (results.leftHandLandmarks) {
@@ -288,41 +353,32 @@ holistic.onResults(async (results) => {
 
   const keypoints = extractKeypoints(results);
 
-  jsonOutput.textContent = JSON.stringify({
-    frame_index: frameIndex,
-    feature_length: keypoints.length,
-    pose_range: '0:88',
-    left_hand_range: '88:151',
-    right_hand_range: '151:214',
-    left_hand_detected: !!(results.leftHandLandmarks && results.leftHandLandmarks.length),
-    right_hand_detected: !!(results.rightHandLandmarks && results.rightHandLandmarks.length),
-    pose_detected: !!(results.poseLandmarks && results.poseLandmarks.length),
-    valid_buffer_frames: rawSequenceBuffer.length,
-    feature_preview: keypoints.slice(0, 30)
-  }, null, 2);
-
   if (isPredicting && !isSending) {
     const validHands = hasValidHands(results);
     const validPose = hasValidPose(results);
 
     if (validHands) {
       rawSequenceBuffer.push(keypoints);
-
-      frameCountText.textContent = `Captured valid frames: ${rawSequenceBuffer.length} / ${MAX_CAPTURE_FRAMES}`;
+      updateProgressUI(rawSequenceBuffer.length, MAX_CAPTURE_FRAMES);
 
       if (validPose) {
         statusText.textContent = `Recording valid gesture frames... ${rawSequenceBuffer.length}/${MAX_CAPTURE_FRAMES}`;
+        overlayStatus.textContent = 'Recording';
       } else {
         statusText.textContent = `Hand detected, pose weak. Recording... ${rawSequenceBuffer.length}/${MAX_CAPTURE_FRAMES}`;
+        overlayStatus.textContent = 'Recording';
       }
 
       if (rawSequenceBuffer.length >= MAX_CAPTURE_FRAMES) {
         isPredicting = false;
+        setProcessingUI();
         statusText.textContent = 'Max capture reached. Finalizing automatically...';
+        overlayStatus.textContent = 'Auto finalizing';
         await finalizePrediction();
       }
     } else {
       statusText.textContent = 'No hands detected. Keep your signing hand(s) visible.';
+      overlayStatus.textContent = 'Waiting for hands';
     }
   }
 
