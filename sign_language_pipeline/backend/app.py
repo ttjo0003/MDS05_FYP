@@ -14,7 +14,7 @@ CORS(app)
 # Config
 # =========================
 INPUT_SIZE = 214
-HIDDEN_SIZE = 256
+HIDDEN_SIZE = 128
 NUM_LAYERS = 2
 TARGET_FRAMES = 30
 MIN_NON_ZERO_FRAMES = 20
@@ -24,13 +24,13 @@ TOP_K = 3
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 MODEL_CANDIDATES = [
-    os.path.join(BASE_DIR, "best_sign_lstm_v1.pth"),
-    os.path.join(BASE_DIR, "..", "model", "best_sign_lstm_v1.pth"),
+    os.path.join(BASE_DIR, "best_sign_lstm_vv1.pth"),
+    os.path.join(BASE_DIR, "..", "model", "best_sign_lstm_vv1.pth"),
 ]
 
 LABEL_MAP_CANDIDATES = [
-    os.path.join(BASE_DIR, "label_map_v1.json"),
-    os.path.join(BASE_DIR, "..", "model", "label_map_v1.json"),
+    os.path.join(BASE_DIR, "label_map_vv1.json"),
+    os.path.join(BASE_DIR, "..", "model", "label_map_vv1.json"),
 ]
 
 
@@ -80,8 +80,12 @@ class SignLSTM(nn.Module):
 
         self.layer_norm = nn.LayerNorm(hidden_size * 2)
 
-        self.attention = nn.Linear(hidden_size * 2, 1)
-        
+        self.attention = nn.Sequential(
+            nn.Linear(hidden_size * 2, hidden_size),
+            nn.Tanh(),
+            nn.Linear(hidden_size, 1)
+        )
+
         self.fc = nn.Linear(hidden_size * 2, num_classes)
 
     def forward(self, x):
@@ -92,9 +96,9 @@ class SignLSTM(nn.Module):
         lstm_out, _ = self.lstm(x)   # (B, 30, 256)
         lstm_out = self.layer_norm(lstm_out)
 
-        attn_scores = self.attention(lstm_out)
+        attn_scores = self.attention(lstm_out)      # (B, 30, 1)
         attn_weights = torch.softmax(attn_scores, dim=1)
-        context = torch.sum(attn_weights * lstm_out, dim=1)
+        context = torch.sum(attn_weights * lstm_out, dim=1)  # (B, 256)
 
         logits = self.fc(context)
         return logits
@@ -219,27 +223,7 @@ def predict():
                 }
             ), 400
 
-        # debug before normalization
-        print("\n===== RAW INPUT DEBUG =====")
-        print("sequence shape:", sequence.shape)
-        print("raw min:", float(sequence.min()))
-        print("raw max:", float(sequence.max()))
-        print("raw mean abs:", float(np.mean(np.abs(sequence))))
-        print("non_zero_frames:", non_zero_frames)
-        print("hand_signal_frames:", hand_signal_frames)
-
-        mean = sequence.mean(axis=0, keepdims=True)
-        sequence = sequence - mean
-        std = sequence.std(axis=0, keepdims=True) + 1e-8
-        sequence = sequence / std
-
-        # debug after normalization
-        print("norm min:", float(sequence.min()))
-        print("norm max:", float(sequence.max()))
-        print("norm mean abs:", float(np.mean(np.abs(sequence))))
-        print("norm std mean:", float(np.mean(np.std(sequence, axis=0))))
-
-        x = torch.tensor(sequence, dtype=torch.float32).unsqueeze(0)
+        x = torch.tensor(sequence, dtype=torch.float32).unsqueeze(0)  # (1, 30, 214)
 
         with torch.no_grad():
             logits = model(x)
@@ -250,10 +234,6 @@ def predict():
             top_k = build_top_k(probs, k=TOP_K)
 
         prediction = id2label[pred_id]
-
-        print("prediction:", prediction)
-        print("confidence:", confidence)
-        print("top_k:", top_k)
 
         if confidence < CONFIDENCE_THRESHOLD:
             return jsonify(
@@ -286,6 +266,7 @@ def predict():
 
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
 
 if __name__ == "__main__":
     app.run(host="127.0.0.1", port=5000, debug=True)
