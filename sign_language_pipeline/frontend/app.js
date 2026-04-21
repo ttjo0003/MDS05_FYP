@@ -15,7 +15,7 @@ canvas.width = 640;
 canvas.height = 480;
 
 const TARGET_FRAMES = 30;
-const MAX_CAPTURE_FRAMES = 90;
+const MAX_CAPTURE_FRAMES = 30;
 const MIN_VALID_FRAMES = 20;
 const BACKEND_URL = 'http://127.0.0.1:5000/predict';
 
