@@ -24,13 +24,13 @@ TOP_K = 3
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 MODEL_CANDIDATES = [
-    os.path.join(BASE_DIR, "best_sign_lstm_vv1.pth"),
-    os.path.join(BASE_DIR, "..", "model", "best_sign_lstm_vv1.pth"),
+    os.path.join(BASE_DIR, "best_sign_lstm_semantic.pth"),
+    os.path.join(BASE_DIR, "..", "model", "best_sign_lstm_semantic.pth"),
 ]
 
 LABEL_MAP_CANDIDATES = [
-    os.path.join(BASE_DIR, "label_map_vv1.json"),
-    os.path.join(BASE_DIR, "..", "model", "label_map_vv1.json"),
+    os.path.join(BASE_DIR, "label_map_semantic.json"),
+    os.path.join(BASE_DIR, "..", "model", "label_map_semantic.json"),
 ]
 
 
